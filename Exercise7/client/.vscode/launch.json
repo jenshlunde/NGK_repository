@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}.exe",
-            "args": ["10.0.0.1", "/home/ase/meme4.jpg"],
+            "args": ["10.0.0.1", "U"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

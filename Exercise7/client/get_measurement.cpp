@@ -1,5 +1,5 @@
 //============================================================================
-// Description : file_client in C++, Ansi-style
+// Description : get_measurement - UDP client, Ansi-style
 // Modified by Jens and Khaleed
 //============================================================================
 
@@ -19,8 +19,9 @@
 
 using namespace std;
 
-#define PORT 9000
 #define BUF_SIZE 1000
+#define BUFFER_SIZE 250
+#define sendFlag 0b0000000
 
 //Prototype: Error message function for 'cleaner' code
 void error(const char *msg)
@@ -30,115 +31,59 @@ void error(const char *msg)
 }
 
 //Prototype: Receive file function 
-void receiveFile(char* _filePath, int _sockfd);
+//void receiveFile(char* _filePath, int _sockfd);
 
 int main(int argc, char *argv[])
 {
 	//Client socket setup
 	printf("Starting client...\n");
 
-	int sockfd;
-	char filePath[250];
-	struct sockaddr_in serv_addr;
-	struct hostent *server;
+	int sockfd, error_n;
+	unsigned int length;
+	struct sockaddr_in server, from;
+	struct hostent *hp;
+	char buffer[BUFFER_SIZE];
 
 	//Terminal print for wrong arguments
 	if (argc < 3)
-	    error("ERROR usage: <ip> <file path>");
+	    error("ERROR usage: <ip> <command>");
 
 	//Terminal print for wrong ip
-	server = gethostbyname(argv[1]);
-	if (server == NULL) 
-	    error("ERROR no such host");
-
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sockfd < 0) 
 	    error("ERROR opening socket");
 
-	printf("Connecting...\n");
-	bzero((char*) &serv_addr, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	bcopy((char*)server->h_addr,(char*)&serv_addr.sin_addr.s_addr,server->h_length);
-	serv_addr.sin_port = htons(PORT);
-	if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
-	    error("ERROR connecting");
-	printf("Connection established...\n\n");
+	server.sin_family = AF_INET;
+	hp = gethostbyname(argv[1]);
+	if (hp == NULL) 
+	    error("ERROR no such host");
+
+	printf("Setting up sending parameters...\n");
+
+	bcopy((char*)hp->h_addr, (char*)&server.sin_addr, hp->h_length);
+	server.sin_port = htons(PORT);
+	length = sizeof(struct sockaddr_in);
+
+	//printf("Enter message to send: ");
+
+	bzero(buffer, BUFFER_SIZE);
+	//fgets(buffer, BUFFER_SIZE-1, stdin);
+
+	error_n = snprintf(buffer, sizeof(buffer), "%s", argv[2]);
+
+	error_n = sendto(sockfd, buffer, strlen(buffer), sendFlag, (const struct sockaddr *)&server, length);
+	if (error_n < 0)
+		error("ERROR during sendto");
 	
-	snprintf(filePath, sizeof(filePath), "%s", argv[2]);
-	// Write the filepath to the server
-	write(sockfd, filePath, sizeof(filePath));
+	error_n = recvfrom(sockfd, buffer, BUFFER_SIZE, sendFlag, (struct sockaddr *)&from, &length);
+	if (error_n < 0)
+		error("ERROR during recvfrom");
 	
-	//Calls the receive file function to receive the requested file
-	receiveFile(filePath, sockfd);
+	write(1,"Got an ack: ",12);
+	write(1,buffer,error_n);
+	printf("\n");
 
 	printf("Closing client...\n\n");
 	close(sockfd);
 	return 0;
-}
-
-
-
-/**
- * Modtager filstørrelsen 
- * Hvis størrelsen = 0 udskrives meddelelsen - Filen findes ikke
- * eller modtages og gemmes filen 1000 bit af gangen.
- *
- **/
-void receiveFile(char*  _filePath, int _sockfd)
-{
-	//Opretter buffer
-	char buffer[BUF_SIZE];
-
-	
-	read(_sockfd, buffer, sizeof(buffer));
-	long filesize = atol(buffer);
-	printf("Size of file: %ld\n", filesize);
-
-	// If file exists, extract file name and create new file with same name
-	if (filesize == 0) {
-		error("The requested file does not exist\n");
-		close(_sockfd); }
-
-	int bytes;
-	const char* fileName = extractFileName(_filePath);
-	ofstream file_fw(fileName, ios::trunc | std::ios::binary);
-
-	while (1)
-	{
-		// Read the 1000 bytes from the server
-		// if less bytes are left, read the remaining
-		bzero(buffer, sizeof(buffer));
-		if (filesize < 1000)
-			bytes = read(_sockfd, buffer, (filesize%1000));
-		else
-			bytes = read(_sockfd, buffer, sizeof(buffer));
-
-		// Write the received data to the file in blocks of 1000 bytes
-		file_fw.write(buffer, bytes);
-
-		// Reduce the the filesize by amount read
-		filesize -= bytes;
-
-		//Debug message: Amount of bytes read and amount of bytes left to read
-		printf("%d bytes read\n", bytes);
-		printf("Bytes left to read: %ld\n", filesize);
-		//sleep(1);
-
-		// Close if file transer is complete
-		if (filesize <= 0)
-		{
-			printf("File transer complete\n");
-			file_fw.close();
-			break;
-		}
-		
-		// Close if error occurs
-		if (bytes < 0)
-		{
-			printf("Error occured while receiving data\n");
-			printf("TERMINATING\n");
-			file_fw.close();
-			break;
-		}
-	}
 }
