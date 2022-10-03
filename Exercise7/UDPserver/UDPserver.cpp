@@ -1,6 +1,4 @@
-/* A simple server in the internet domain using TCP
-The port number is passed as an argument 
-Based on example from Michael Alrøe
+/* A simple server in the internet domain using UDP
 
 Modified: Jens Lunde and Kaleed
 Extended to support file transfer!
@@ -18,9 +16,11 @@ Extended to support file transfer!
 #include <fstream>
 
 #define STRBUFSIZE 250
+#define recvFlag 0b0000000
+#define sendFlag 0b0000000
 using namespace std;
 
-void sendFile(string fileName, long fileSize, int outToClient);
+//void sendFile(string fileName, long fileSize, int outToClient);
 
 void error(const char *msg)
 {
@@ -34,7 +34,8 @@ int main(int argc, char *argv[])
 	//Setup 
 	printf("Server starting...\n");
 
-	int sockfd, newsockfd, n;
+	int sockfd, newsockfd, error_n;
+	unsigned long fromlen;
 	char filePath[100];
 	socklen_t clilen;
 	char buffer[BUFSIZE];
@@ -42,7 +43,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr, cli_addr;
 	
 	//Create socket
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sockfd < 0)
 		error("ERROR during opening a socket");
 
@@ -58,103 +59,22 @@ int main(int argc, char *argv[])
 		error("ERROR during binding");
 
 	printf("Waiting for a client...\n");
-	listen(sockfd, 5); //5 clients max
 
-	clilen = sizeof(cli_addr);
-
-	while(true)
+	while (true)
 	{
-		printf("Waiting for client...\n");
-		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-		if (newsockfd < 0)
-            error("ERROR during accept");
-		else
-            printf("\nAccepted client\n");
+  	
+	error_n = recvfrom(sockfd, buffer, STRBUFSIZE, recvFlag, (struct sockaddr*)&cli_addr, &clilen);
+  	if (error_n < 0) 
+		error("recvfrom crashed");
 	
-		// Read message from client
-		bzero(buffer, sizeof(buffer));
-		readTextTCP(newsockfd, filePath, sizeof(filePath));
+	snprintf(bufferTx, sizeof(bufferTx), "Got your message");
+	
+	error_n = sendto(sockfd,bufferTx,sizeof(bufferTx),sendFlag,(struct sockaddr *) &cli_addr,clilen);
+  	if (error_n  < 0)
+    	error("sendto crashed");
 
-		// Check if requested file exsists
-		printf("Received filepath from client: %s\n", filePath);	
-		printf("Checking if file exists...\n");
-		long fileSize = getFilesize(filePath);		//If fileSize == 0, file doesn't exist
+	//.... switch på indkommende kommando, send det relevante info tilbage
+  	}
 
-		// Print debug message and send filebyte to client
-		if (fileSize == 0)
-		{
-			printf("File not found\n");
-			snprintf(bufferTx, sizeof(bufferTx), "%ld", fileSize);
-			n = write(newsockfd, bufferTx, strlen(bufferTx));
-			if (n < 0)
-				error("ERROR writing to socket");
-		} else
-		{
-			printf("File found - sending file...\n");
-			snprintf(bufferTx, sizeof(bufferTx), "%ld", fileSize);
-			n = write(newsockfd, bufferTx, strlen(bufferTx));
-			if (n < 0)
-				error("ERROR writing to socket");
-			
-			// If file exists, send the file
-			sendFile(filePath, fileSize, newsockfd);
-		}
-
-		// Close socket connection to client
-		close(newsockfd);
-	}
-
-	close(sockfd);
 	return 0;
 }
-
-/**
- * Funktion der sender fil til clienten
-**/
-void sendFile(string _fileName, long _fileSize, int _outToClient)
-{
-    printf("\nSending File...\n");
-	//Define buffer with size of BUFSIZE (defined in iknlib header) bytes, and the filename
-    uint8_t Buffer[BUFSIZE];
-	string filePath = _fileName;
-	int bytesRead, bytesWritten;
-	
-    //Deffines input stream
-	ifstream file_fr(filePath, std::ios::binary);
-
-    while (_fileSize > 0)	// Loop så længe der er bytes tilbage i filen
-	{
-		// Read 1000 bytes from the file, load it into the buffer
-		// Måske skulle det her ikke hardcodes, men være en DEFINE??
-
-		//Tjekker at den resterende filesize er under 1000 (den sidste chunk)
-		if (_fileSize < 1000)
-		{
-			file_fr.read((char*)Buffer, _fileSize);
-			bytesRead = file_fr.gcount();
-		} 
-		else	//Hvis der er over 1000 tilbage, så sættes streamsize til BUFSIZE frem for filesize	
-		{
-			file_fr.read((char*)Buffer, BUFSIZE);
-			bytesRead = file_fr.gcount();
-		}
-
-		//Send data to the client socket
-		bytesWritten = write(_outToClient, Buffer, bytesRead);
-    	if (bytesWritten < 0)
-        	error("Error sending to socket\n");
-		
-		//Debug message 
-		printf("%d bytes sent\n", bytesWritten);
-
-		// Reduce the filesize by amount written
-		_fileSize -= bytesWritten;
-	}
-	
-	printf("File transfer complete\n\n");
-
-    // Close the file stream
-    file_fr.close();
-}
-
-
